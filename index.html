@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Tamil Nadu Cuisine Regions (GeoJSON) & Markers - 3D</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css" rel="stylesheet">
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        html, body { height: 100%; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; height: 100%; background-color: #e0e0e0; }
+        #loading-overlay { /* Simple loading indicator during style change */
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.7); z-index: 10; display: none; /* Hidden by default */
+            justify-content: center; align-items: center; font-size: 1.5em; color: #333;
+            display: none; /* Start hidden */
+        }
+        #left-panel {
+            position: absolute; top: 10px; left: 10px; background: rgba(255, 255, 255, 0.97);
+            padding: 15px; border-radius: 8px; box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+            z-index: 2; max-width: 340px; max-height: calc(100% - 40px);
+            display: flex; flex-direction: column;
+        }
+        h3 { margin: 0 0 10px 0; padding-bottom: 5px; border-bottom: 1px solid #ddd; font-size: 16px; color: #333; }
+        #overlay-controls { margin-bottom: 15px; }
+        #overlay-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+        #overlay-buttons button {
+            flex-basis: calc(50% - 4px); background: #e9e9e9; border: 1px solid #ccc; padding: 8px 10px;
+            border-radius: 5px; cursor: pointer; font-size: 13px; font-weight: 500; color: #444;
+            transition: background-color 0.3s ease, border-color 0.3s ease; display: flex;
+            align-items: center; justify-content: center; gap: 5px; min-height: 38px; text-align: center;
+        }
+        #overlay-buttons button:hover { background-color: #d8d8d8; border-color: #bbb; }
+        #overlay-buttons button.active { background-color: #673AB7; color: white; border-color: #673AB7; font-weight: bold; } /* Changed active color */
+        #overlay-buttons button .icon { font-size: 16px; }
+        #overlay-buttons button#btn-clear { flex-basis: 100%; background-color: #f8d7da; border-color: #f5c6cb; color: #721c24;}
+        #overlay-buttons button#btn-clear:hover { background-color: #f1b0b7; border-color: #eba1a8;}
+        #overlay-info { margin-bottom: 15px; font-size: 13px; color: #555; max-height: 150px; overflow-y: auto; padding-right: 5px; }
+        #overlay-info h3 { font-size: 14px; margin-bottom: 5px;}
+        #overlay-info p { margin: 0 0 8px 0; line-height: 1.4; }
+        #overlay-info strong { color: #333; }
+        #marker-form { margin-bottom: 15px; }
+        #marker-form label { display: block; margin-bottom: 3px; font-weight: bold; font-size: 13px; color: #555;}
+        #marker-form input[type="text"] { display: block; width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 3px; font-size: 13px; }
+        #marker-form button { padding: 10px 15px; background-color: #3887be; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 14px; width: 100%; }
+        #marker-form button:hover { background-color: #2a6a9a; }
+        #marker-form .loading { display: none; margin: 5px 0; font-style: italic; color: #555; text-align: center; font-size: 12px; }
+        #marker-list-container { flex-grow: 1; overflow-y: auto; border-top: 1px solid #ddd; padding-top: 10px; }
+        #marker-list { list-style: none; padding: 0; margin: 0; }
+        #marker-list li { padding: 8px 5px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+        #marker-list li:last-child { border-bottom: none; }
+        #marker-list li:hover { background-color: #f0f0f0; }
+        #marker-list li .marker-type { font-size: 10px; color: #fff; background-color: #FF00FF; padding: 2px 5px; border-radius: 3px; margin-left: 5px; white-space: nowrap; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="loading-overlay" style="display: none;">Loading Style...</div> <!-- Ensure initial state is hidden -->
+
+<div id="left-panel">
+    <div id="overlay-controls">
+        <h3>Explore Cuisine Regions</h3>
+        <div id="overlay-buttons">
+             <button id="btn-clear" title="Clear Cuisine Overlay">
+                 <span class="icon">🚫</span> Clear Overlay
+            </button>
+            <!-- Dynamic buttons here -->
+        </div>
+    </div>
+    <div id="overlay-info">
+        <h3 id="overlay-title">Select a Region</h3>
+        <p id="overlay-description">Click a region button above...</p>
+    </div>
+    <div id="marker-form">
+         <h3>Add Your Marker</h3>
+        <label for="marker-label">Label:</label>
+        <input type="text" id="marker-label" placeholder="e.g., My Trip Spot">
+        <label for="marker-location">Location:</label>
+        <input type="text" id="marker-location" placeholder="Address or Place Name">
+        <button id="add-marker-btn">Add Custom Marker</button>
+        <div class="loading" id="loading-indicator">Searching...</div>
+    </div>
+    <div id="marker-list-container">
+        <h3>My Markers</h3>
+        <ul id="marker-list"></ul>
+    </div>
+</div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/jscastro76/threebox@v.2.2.2/dist/threebox.min.js" type="text/javascript"></script>
+
+<script>
+    // --- Configuration & State ---
+    mapboxgl.accessToken = 'pk.eyJ1IjoibmFyZW5tMDciLCJhIjoiY205enN2bjdmMXZzNTJwcHNxYmI1MzZodSJ9.eXi1X3dRqSKEa5LNLfjmyQ'; // *** REPLACE THIS ***
+
+    const COLOR_MAP_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
+    const LIGHT_MAP_STYLE = 'mapbox://styles/mapbox/light-v11';
+    const OVERLAY_SOURCE_ID = 'cuisine-region-source';
+    const OVERLAY_LAYER_ID = 'cuisine-region-layer';
+
+    let userMarkersInfo = [];
+    let currentOverlayId = null;
+    let mapStyleLoaded = false;
+    let isStyleChanging = false;
+    let tb;
+    let map;
+
+    // --- Cuisine Region Data ---
+    function createPolygonFromBbox(bbox) {
+        const [minLng, minLat, maxLng, maxLat] = bbox;
+        return { type: 'Polygon', coordinates: [[ [minLng, minLat], [maxLng, minLat], [maxLng, maxLat], [minLng, maxLat], [minLng, minLat] ]] };
+    }
+
+    const cuisineRegions = {
+         chola: { id: 'chola', name: "Chola Nadu", icon: "🍚", color: '#4CAF50', boundingBox: [78.5, 10.3, 80.2, 11.9], description: "<strong>Region:</strong> Central TN (Thanjavur, Trichy, etc.).<br><strong>Characteristics:</strong> Rice-centric, subtle spices, balanced flavors. Known for unique tasting freshwater fish.<br><strong>Dishes:</strong> Puliyodharai, Sambar Sadham, Sevai, Kumbakonam Filter Coffee." },
+        pandiya: { id: 'pandiya', name: "Pandiya Nadu", icon: "🌶️", color: '#FF5722', boundingBox: [77.2, 8.4, 79.4, 10.5], description: "<strong>Region:</strong> Southern TN (Madurai, Chettinad, Tirunelveli).<br><strong>Characteristics:</strong> Bold, spicy flavors, diverse non-veg (esp. Chettinad).<br><strong>Dishes:</strong> Chicken Chettinad, Parotta varieties (Muttai, Kothu, Coin), Jigarthanda, Tirunelveli Halwa." },
+        kongu: { id: 'kongu', name: "Kongu Nadu", icon: "🥥", color: '#FFC107', boundingBox: [76.3, 10.6, 78.2, 11.9], description: "<strong>Region:</strong> Western TN (Coimbatore, Erode).<br><strong>Characteristics:</strong> Coconut, onion, groundnut base. Mutton, chicken, quail common.<br><strong>Dishes:</strong> Arisimparupu Sadam, Thengai Paal Jaggery, Sandahai, Kelvaragu items." },
+        tondai: { id: 'tondai', name: "Tondaimandalam", icon: "🍆", color: '#9C27B0', boundingBox: [79.3, 12.5, 80.6, 13.9], description: "<strong>Region:</strong> Northern TN (Near Andhra border).<br><strong>Characteristics:</strong> Blend of Tamil & Telugu influences, hot & spicy veg/non-veg.<br><strong>Dishes:</strong> Vada Curry, Chicken 65, Idli, Dosai, Bhajji, various Poriyals." },
+        nanjil: { id: 'nanjil', name: "Nanjil Nadu", icon: "🐟", color: '#03A9F4', boundingBox: [77.1, 7.9, 77.9, 8.6], description: "<strong>Region:</strong> Southern Tip (Kanyakumari).<br><strong>Characteristics:</strong> Coastal, heavy coconut & seafood use, Kerala influence.<br><strong>Dishes:</strong> Meen Kuzhambu, Thengai Paal Payasam, Pazham Pori (Banana Fritters)." }
+    };
+    Object.values(cuisineRegions).forEach(region => { region.geometry = createPolygonFromBbox(region.boundingBox); });
+
+    // --- Initialization ---
+    if (!mapboxgl.accessToken || mapboxgl.accessToken === 'YOUR_MAPBOX_ACCESS_TOKEN') {
+        alert('Error: Please replace "YOUR_MAPBOX_ACCESS_TOKEN"!');
+    } else {
+        initializeMap();
+        initializeOverlayControls();
+        initializeCustomMarkerForm();
+    }
+
+    // --- Map and 3D Setup ---
+    function initializeMap() {
+        map = new mapboxgl.Map({
+            container: 'map', style: COLOR_MAP_STYLE, center: [78.6569, 11.1271],
+            zoom: 6.5, pitch: 55, bearing: -10, antialias: true
+        });
+
+        map.on('load', () => {
+            console.log("Initial map style loaded:", map.getStyle().name);
+            mapStyleLoaded = true;
+            isStyleChanging = false;
+            document.getElementById('loading-overlay').style.display = 'none';
+            setupMapResources();
+            if (currentOverlayId) { addMapboxOverlay(cuisineRegions[currentOverlayId]); }
+        });
+
+        map.on('style.load', () => {
+             console.log("Map 'style.load' event fired. Current style:", map.getStyle().name);
+             if (isStyleChanging) {
+                 console.log("Style finished changing, re-adding resources...");
+                 mapStyleLoaded = true;
+                 isStyleChanging = false;
+                 document.getElementById('loading-overlay').style.display = 'none';
+                 setupMapResources();
+                  if (currentOverlayId && cuisineRegions[currentOverlayId]) {
+                     addMapboxOverlay(cuisineRegions[currentOverlayId]);
+                     console.log("Re-added overlay:", currentOverlayId);
+                 } else {
+                     console.log("No overlay to re-add after style change.");
+                 }
+                 // *** THIS IS THE FIX: Update panel info after style change ***
+                 updateOverlayInfo(currentOverlayId);
+             }
+        });
+
+        map.addControl(new mapboxgl.NavigationControl());
+        map.addControl(new mapboxgl.FullscreenControl());
+    }
+
+    function setupMapResources() {
+         if (!map.getSource('mapbox-dem')) {
+            map.addSource('mapbox-dem', { 'type': 'raster-dem', 'url': 'mapbox://mapbox.mapbox-terrain-dem-v1', 'tileSize': 512, 'maxzoom': 14 });
+             console.log("Added DEM source.");
+         }
+         map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
+         console.log("Set terrain.");
+
+        if (!map.getLayer('threebox-layer')) {
+             if (!tb) {
+                 map.addLayer({
+                     id: 'threebox-layer', type: 'custom', renderingMode: '3d',
+                     onAdd: function (mapInstance, gl) {
+                         console.log("onAdd: Initializing Threebox...");
+                         try {
+                             tb = new Threebox(mapInstance, gl, { defaultLights: true, enableTooltips: true });
+                             console.log("Threebox initialized successfully.");
+                             // Re-add markers if needed (important if tb instance was somehow lost)
+                             userMarkersInfo.forEach(markerInfo => {
+                                 if (markerInfo.threeboxObject && !tb.scene?.children.includes(markerInfo.threeboxObject.obj)) {
+                                     console.log("Re-adding persisted custom marker to scene:", markerInfo.name);
+                                     tb.add(markerInfo.threeboxObject);
+                                 } else if (!markerInfo.threeboxObject) {
+                                     console.warn("Marker info exists but threebox object missing for", markerInfo.name)
+                                 }
+                             });
+                         } catch (error) { console.error("Error initializing Threebox:", error); }
+                     },
+                     render: function (gl, matrix) { if (tb) tb.update(matrix); }
+                 }, 'waterway-label');
+             } else {
+                 map.addLayer({
+                     id: 'threebox-layer', type: 'custom', renderingMode: '3d',
+                     onAdd: function() { console.log("onAdd: Re-attaching existing Threebox layer."); },
+                     render: function (gl, matrix) { if (tb) tb.update(matrix); }
+                 }, 'waterway-label');
+                  console.log("Re-added Threebox layer definition.");
+             }
+        } else {
+             console.log("Threebox layer already exists.");
+        }
+    }
+
+    // --- Overlay Functionality ---
+    function initializeOverlayControls() {
+        const container = document.getElementById('overlay-buttons');
+        Object.values(cuisineRegions).forEach(region => {
+            const button = document.createElement('button');
+            button.id = `btn-${region.id}`; button.title = region.name;
+            button.onclick = () => selectOverlay(region.id);
+            button.innerHTML = `<span class="icon">${region.icon}</span> ${region.name}`;
+            container.appendChild(button);
+        });
+        document.getElementById('btn-clear').onclick = () => selectOverlay(null);
+    }
+
+    function selectOverlay(overlayId) {
+        if (isStyleChanging) { console.warn("Style is changing, wait."); return; }
+        if (!mapStyleLoaded && overlayId !== null) { console.warn("Map not loaded yet."); return; }
+
+        console.log("Selecting overlay:", overlayId);
+        const intendedOverlayId = overlayId;
+        const desiredStyle = intendedOverlayId ? LIGHT_MAP_STYLE : COLOR_MAP_STYLE;
+        const currentStyle = map.getStyle().url || map.getStyle().name;
+
+        // --- Update Button States ---
+         document.querySelectorAll('#overlay-buttons button').forEach(btn => {
+            const btnId = btn.id.replace('btn-', '');
+            const isActive = intendedOverlayId !== null && btnId === intendedOverlayId && btn.id !== 'btn-clear';
+            btn.classList.toggle('active', isActive);
+        });
+        document.getElementById('btn-clear')?.classList.remove('active');
+
+        // --- Handle Style Change OR Overlay Update ---
+        if (currentStyle !== desiredStyle) {
+            console.log(`Style change needed: ${currentStyle} -> ${desiredStyle}`);
+            isStyleChanging = true;
+            currentOverlayId = intendedOverlayId; // Store target ID
+            clearMapboxOverlay(); // Remove overlay *before* changing style
+            document.getElementById('loading-overlay').style.display = 'flex';
+            map.setStyle(desiredStyle);
+            // Rest happens in 'style.load'
+        } else {
+            console.log("Style matches, just updating overlay.");
+             clearMapboxOverlay();
+             currentOverlayId = intendedOverlayId; // Update current ID
+             if (currentOverlayId && cuisineRegions[currentOverlayId]) {
+                 addMapboxOverlay(cuisineRegions[currentOverlayId]);
+             }
+             // Update panel immediately if no style change
+             updateOverlayInfo(currentOverlayId);
+             if (currentOverlayId) {
+                  const region = cuisineRegions[currentOverlayId];
+                  const centerLng = (region.boundingBox[0] + region.boundingBox[2]) / 2;
+                  const centerLat = (region.boundingBox[1] + region.boundingBox[3]) / 2;
+                  map.flyTo({ center: [centerLng, centerLat], zoom: 7.5, pitch: 55, essential: true, duration: 1000 });
+             }
+        }
+    }
+
+    function clearMapboxOverlay() {
+         if (!map) return;
+        if (map.getLayer(OVERLAY_LAYER_ID)) { map.removeLayer(OVERLAY_LAYER_ID); console.log("Removed Mapbox layer."); }
+        if (map.getSource(OVERLAY_SOURCE_ID)) { map.removeSource(OVERLAY_SOURCE_ID); console.log("Removed Mapbox source."); }
+    }
+
+    function addMapboxOverlay(regionData) {
+        if (!map || !regionData || !mapStyleLoaded) { console.warn("Cannot add overlay, map/data not ready"); return; }
+        console.log("Adding Mapbox overlay for:", regionData.id);
+        clearMapboxOverlay(); // Ensure clean state
+        try {
+            map.addSource(OVERLAY_SOURCE_ID, { 'type': 'geojson', 'data': { 'type': 'Feature', 'geometry': regionData.geometry } });
+            map.addLayer({
+                'id': OVERLAY_LAYER_ID, 'type': 'fill', 'source': OVERLAY_SOURCE_ID, 'layout': {},
+                'paint': { 'fill-color': regionData.color, 'fill-opacity': 0.4 }
+            }, 'threebox-layer'); // Add below 3D markers
+             console.log("Added Mapbox source and layer:", regionData.id);
+        } catch (error) { console.error("Error adding Mapbox overlay:", error); clearMapboxOverlay(); }
+    }
+
+    function updateOverlayInfo(overlayId) {
+        const titleEl = document.getElementById('overlay-title');
+        const descEl = document.getElementById('overlay-description');
+        if (overlayId && cuisineRegions[overlayId]) {
+            const region = cuisineRegions[overlayId];
+            titleEl.textContent = `${region.icon} ${region.name}`;
+            descEl.innerHTML = region.description; // Use innerHTML for formatting
+        } else {
+            titleEl.textContent = "Select a Region";
+            descEl.innerHTML = "Click a region button above to overlay its approximate area and learn about its unique cuisine.";
+        }
+        console.log("Updated overlay info panel for:", overlayId || "None");
+    }
+
+    // --- Custom Marker Functionality ---
+    function initializeCustomMarkerForm() {
+        const labelInput = document.getElementById('marker-label');
+        const locationInput = document.getElementById('marker-location');
+        const addButton = document.getElementById('add-marker-btn');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        addButton.addEventListener('click', () => handleCustomMarkerAddition(labelInput, locationInput, addButton, loadingIndicator));
+        renderUserMarkerList();
+    }
+
+     function handleCustomMarkerAddition(labelInput, locationInput, addButton, loadingIndicator) {
+        const label = labelInput.value.trim(); const query = locationInput.value.trim();
+        if (!query) { alert('Please enter a location.'); return; }
+        if (!tb) { alert("3D map is not ready yet."); return; }
+        loadingIndicator.style.display = 'block'; addButton.disabled = true; addButton.textContent = 'Searching...';
+        const bbox = [76.0, 8.0, 80.5, 13.8];
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${mapboxgl.accessToken}&country=IN&limit=1&bbox=${bbox.join(',')}&autocomplete=false`;
+        fetch(url)
+            .then(response => response.ok ? response.json() : Promise.reject(`HTTP error! ${response.status}`))
+            .then(data => {
+                if (data?.features?.length > 0) {
+                    const feat = data.features[0];
+                    const coords = { lng: feat.center[0], lat: feat.center[1] };
+                    addCustomMarker(label || feat.place_name, coords);
+                    labelInput.value = ''; locationInput.value = '';
+                } else { alert(`Could not find "${query}" within Tamil Nadu.`); }
+            })
+            .catch(error => { console.error('Geocoding error:', error); alert(`Error: ${error}`); })
+            .finally(() => { loadingIndicator.style.display = 'none'; addButton.disabled = false; addButton.textContent = 'Add Custom Marker'; });
+     }
+
+    function addCustomMarker(label, coords) {
+        if (!tb || !coords) return;
+        console.log(`Adding custom marker: ${label}`);
+        const markerSize = 3000; const markerColor = 0xFF00FF; const altitude = 2000;
+        const markerMesh = createMarkerMesh(markerColor, markerSize);
+        const tbObject = tb.Object3D({ obj: markerMesh, units: 'meters', anchor: 'bottom' });
+        tbObject.setCoords([coords.lng, coords.lat, altitude]);
+        tbObject.tooltip = `My Marker: ${label}`;
+        tbObject.userData = { type: 'custom' };
+        tb.add(tbObject);
+        userMarkersInfo.push({ name: label, lat: coords.lat, lng: coords.lng, threeboxObject: tbObject });
+        renderUserMarkerList();
+        map.flyTo({ center: [coords.lng, coords.lat], zoom: Math.max(map.getZoom(), 10), pitch: 55 });
+    }
+
+    function renderUserMarkerList() {
+        const listElement = document.getElementById('marker-list');
+        if (!listElement) return; listElement.innerHTML = '';
+        userMarkersInfo.sort((a, b) => a.name.localeCompare(b.name));
+        userMarkersInfo.forEach(markerInfo => {
+            const li = document.createElement('li'); li.textContent = markerInfo.name;
+            li.setAttribute('data-lng', markerInfo.lng); li.setAttribute('data-lat', markerInfo.lat);
+            const typeSpan = document.createElement('span'); typeSpan.className = 'marker-type'; typeSpan.textContent = 'Custom'; li.appendChild(typeSpan);
+            li.addEventListener('click', () => { map.flyTo({ center: [markerInfo.lng, markerInfo.lat], zoom: Math.max(map.getZoom(), 12), pitch: 55 }); });
+            listElement.appendChild(li);
+        });
+    }
+
+    // --- Helper: Create Marker Mesh ---
+    function createMarkerMesh(color = 0xff0000, size = 500) {
+        const geometry = new THREE.ConeGeometry(size * 0.3, size * 1.5, 12);
+        const material = new THREE.MeshPhongMaterial({ color: color, side: THREE.DoubleSide, shininess: 80, emissive: color, emissiveIntensity: 0.15 });
+        geometry.translate(0, -size * 0.75, 0);
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.rotation.x = Math.PI / 2;
+        return mesh;
+    }
+
+</script>
+
+</body>
+</html>
